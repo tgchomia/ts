@@ -1,0 +1,120 @@
+## **BASIC FReT ALGORITHM WITH TIME-SERIES DATA EXAMPLE** ##
+
+## Sample Data
+t.step <- seq(0.1,70,by=0.1) 
+data.tot <- data.frame(cos(2*pi*t.step/3)+0.75*sin(2*pi*t.step/5))
+plot(data.tot[,1],type="l", lwd=2)
+
+x.train <- data.frame(data.tot[1:600,1])
+x.test <- data.frame(data.tot[601:700,1])
+
+## Forecast Horizon
+fstH <- 100
+
+## Time-series to Distance Matrix
+dm <- as.matrix(dist(x.train[,1], method = "euclidean", upper = TRUE))
+
+## Extract Local Topology
+dm.padded <- rbind(matrix(,1,ncol(dm)),dm,matrix(,1,ncol(dm)))
+dm.padded <- cbind(matrix(,nrow(dm.padded),1),dm.padded,matrix(,nrow(dm.padded),1))
+LT.Output <- matrix(,nrow(dm),ncol(dm))
+extract.LT <- function(x){
+  pos.weights <- c(2^0,2^1,2^2,2^7,0,2^3,2^6,2^5,2^4)
+  new.values <- x>=x[5]
+  sum(pos.weights*new.values)
+}
+extract.values <- do.call(rbind,lapply(1:nrow(dm),function(i) t(sapply(1:ncol(dm),function(j) dm.padded[i:(i+2),j:(j+2)]))))
+LT.Output <- matrix(apply(extract.values,1,extract.LT),nrow = nrow(dm),byrow = T)
+
+## Create Local Topological Layers
+LT.layers <- LT.Output[2:(nrow(dm)-1),2:(ncol(dm)-1)]
+
+layer.1 <- LT.layers
+thresh <- 42.5		
+layer.1[layer.1<thresh] <- 1 		
+layer.1[layer.1>1] <- 0		
+
+layer.2 <- LT.layers
+thresh1 <- 85.5		
+thresh <- 42.5		
+layer.2[layer.2<thresh] <- 0 		
+layer.2[layer.2>thresh1] <- 0 		
+layer.2[layer.2>0] <- 2		
+
+layer.3 <- LT.layers
+thresh1 <- 127.5		
+thresh <- 85.5		
+layer.3[layer.3<thresh] <- 0 		
+layer.3[layer.3>thresh1] <- 0 		
+layer.3[layer.3>0] <- 3		
+
+layer.4 <- LT.layers
+thresh1 <- 170.5		
+thresh <- 127.5		
+layer.4[layer.4<thresh] <- 0 		
+layer.4[layer.4>thresh1] <- 0 		
+layer.4[layer.4>0] <- 4	
+
+layer.5 <- LT.layers
+thresh1 <- 212.5		
+thresh <- 170.5		
+layer.5[layer.5<thresh] <- 0 		
+layer.5[layer.5>thresh1] <- 0 		
+layer.5[layer.5>0] <- 5	
+
+layer.6 <- LT.layers
+thresh <- 212.5												
+layer.6[layer.6<thresh] <- 0 								
+layer.6[layer.6>thresh] <- 6 								
+
+## Flatten 
+
+flattened.layers <- layer.1+layer.2+layer.3+layer.4+layer.5+layer.6
+
+
+## Create 1-D weight vector  
+prior.states <- flattened.layers[-nrow(flattened.layers),]
+rv.xm <- flattened.layers[nrow(flattened.layers),]
+
+S_im<-matrix(,nrow=nrow(prior.states), ncol=1)
+
+for (a in 1:nrow(prior.states)){
+  rv.xi <- prior.states[a,]
+  s.im.sim <- mean(as.numeric(rv.xm==rv.xi))
+  S_im[a,] <- s.im.sim
+}
+
+
+## S_im  Threshold Maximization
+testseqth <- seq(0.61,1.0,0.01)
+S_im.opto <- list()
+for (b in 1:length(testseqth)){
+  S_im.threshd <- testseqth[b]
+  S_im.thres.output <- which(S_im > S_im.threshd)
+  S_im.opto[[b]] <-S_im.thres.output
+}
+find1 <- function(y){which(y<(nrow(x.train)-fstH-2))}
+find1.output <- lapply(S_im.opto,find1)
+find2 <- function(z){which(length(z)>=3)}
+find2.output <- lapply(find1.output,find2)
+arche <- sum(as.numeric(find2.output), na.rm = TRUE)
+archetypes <- cbind(S_im.opto[[arche]])
+set.arche.col <- sum(as.numeric(archetypes<nrow(x.train)-fstH-2))
+arche.data <- matrix(,nrow=fstH,ncol=set.arche.col)
+for (c in 1:set.arche.col){
+  arche.ind <- archetypes[c,1]
+  orf <- x.train[(arche.ind+3):(arche.ind+fstH+2),1]
+  arche.data[,c] <- orf
+}
+
+FReT.forecast <- apply(arche.data,1,mean)
+
+## Plot data
+plot(x.test[,1], type="l",lwd=4, col=1)
+lines(FReT.forecast, lty=2, lwd=4, col=2)
+legLabels <- c("Test Data", "FReT")							
+legend("bottomleft", cex=0.75, leg=legLabels, lwd=3, lty=1:2, col=1:2)
+
+
+
+
